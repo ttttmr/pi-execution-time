@@ -20,22 +20,26 @@ export default function (pi: ExtensionAPI) {
 	function renderRunning(ctx: ExtensionContext) {
 		if (!timer) return;
 		const elapsedMs = Date.now() - timer.startedAt;
-		const icon = ctx.ui.theme.fg("accent", "⏱");
-		const text = ctx.ui.theme.fg("dim", ` ${formatElapsed(elapsedMs)}`);
+		const theme = getInitializedTheme(ctx);
+		const icon = theme?.fg("accent", "⏱") ?? "⏱";
+		const text = theme?.fg("dim", ` ${formatElapsed(elapsedMs)}`) ?? ` ${formatElapsed(elapsedMs)}`;
 		ctx.ui.setStatus(STATUS_KEY, icon + text);
 	}
 
 	function renderDone(ctx: ExtensionContext, elapsedMs: number, completedAt: Date) {
-		const icon = ctx.ui.theme.fg("success", "✓");
-		const label = ctx.ui.theme.fg("dim", " task ");
-		const duration = ctx.ui.theme.fg("muted", formatElapsed(elapsedMs));
-		const separator = ctx.ui.theme.fg("dim", " · ");
-		const completedTime = ctx.ui.theme.fg("muted", formatCompletedAt(completedAt));
+		const theme = getInitializedTheme(ctx);
+		const icon = theme?.fg("success", "✓") ?? "✓";
+		const label = theme?.fg("dim", " task ") ?? " task ";
+		const duration = theme?.fg("muted", formatElapsed(elapsedMs)) ?? formatElapsed(elapsedMs);
+		const separator = theme?.fg("dim", " · ") ?? " · ";
+		const completedTime = theme?.fg("muted", formatCompletedAt(completedAt)) ?? formatCompletedAt(completedAt);
 		ctx.ui.setStatus(STATUS_KEY, icon + label + duration + separator + completedTime);
 	}
 
 	pi.on("agent_start", async (_event, ctx) => {
 		stopTimer();
+
+		if (!supportsFooterStatus(ctx)) return;
 
 		timer = {
 			startedAt: Date.now(),
@@ -51,13 +55,32 @@ export default function (pi: ExtensionAPI) {
 		const completedAt = new Date();
 		const elapsedMs = completedAt.getTime() - timer.startedAt;
 		stopTimer();
-		renderDone(ctx, elapsedMs, completedAt);
+		if (supportsFooterStatus(ctx)) renderDone(ctx, elapsedMs, completedAt);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		stopTimer();
-		ctx.ui.setStatus(STATUS_KEY, undefined);
+		if (supportsFooterStatus(ctx)) ctx.ui.setStatus(STATUS_KEY, undefined);
 	});
+}
+
+function supportsFooterStatus(ctx: ExtensionContext) {
+	const mode = getContextMode(ctx);
+	return ctx.hasUI && (mode === "tui" || mode === "rpc");
+}
+
+function getInitializedTheme(ctx: ExtensionContext) {
+	if (getContextMode(ctx) !== "tui") return undefined;
+
+	try {
+		return ctx.ui.theme;
+	} catch {
+		return undefined;
+	}
+}
+
+function getContextMode(ctx: ExtensionContext) {
+	return (ctx as ExtensionContext & { mode?: string }).mode;
 }
 
 function formatElapsed(ms: number) {
