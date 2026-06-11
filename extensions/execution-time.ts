@@ -20,20 +20,24 @@ export default function (pi: ExtensionAPI) {
 	function renderRunning(ctx: ExtensionContext) {
 		if (!timer) return;
 		const elapsedMs = Date.now() - timer.startedAt;
-		const icon = ctx.ui.theme.fg("accent", "⏱");
-		const text = ctx.ui.theme.fg("dim", ` ${formatElapsed(elapsedMs)}`);
+		const theme = getInitializedTheme(ctx);
+		const icon = theme?.fg("accent", "⏱") ?? "⏱";
+		const text = theme?.fg("dim", ` ${formatElapsed(elapsedMs)}`) ?? ` ${formatElapsed(elapsedMs)}`;
 		ctx.ui.setStatus(STATUS_KEY, icon + text);
 	}
 
 	function renderDone(ctx: ExtensionContext, elapsedMs: number) {
-		const icon = ctx.ui.theme.fg("success", "✓");
-		const label = ctx.ui.theme.fg("dim", " task ");
-		const value = ctx.ui.theme.fg("muted", formatElapsed(elapsedMs));
+		const theme = getInitializedTheme(ctx);
+		const icon = theme?.fg("success", "✓") ?? "✓";
+		const label = theme?.fg("dim", " task ") ?? " task ";
+		const value = theme?.fg("muted", formatElapsed(elapsedMs)) ?? formatElapsed(elapsedMs);
 		ctx.ui.setStatus(STATUS_KEY, icon + label + value);
 	}
 
 	pi.on("agent_start", async (_event, ctx) => {
 		stopTimer();
+
+		if (!supportsFooterStatus(ctx)) return;
 
 		timer = {
 			startedAt: Date.now(),
@@ -48,13 +52,32 @@ export default function (pi: ExtensionAPI) {
 
 		const elapsedMs = Date.now() - timer.startedAt;
 		stopTimer();
-		renderDone(ctx, elapsedMs);
+		if (supportsFooterStatus(ctx)) renderDone(ctx, elapsedMs);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		stopTimer();
-		ctx.ui.setStatus(STATUS_KEY, undefined);
+		if (supportsFooterStatus(ctx)) ctx.ui.setStatus(STATUS_KEY, undefined);
 	});
+}
+
+function supportsFooterStatus(ctx: ExtensionContext) {
+	const mode = getContextMode(ctx);
+	return ctx.hasUI && (mode === "tui" || mode === "rpc");
+}
+
+function getInitializedTheme(ctx: ExtensionContext) {
+	if (getContextMode(ctx) !== "tui") return undefined;
+
+	try {
+		return ctx.ui.theme;
+	} catch {
+		return undefined;
+	}
+}
+
+function getContextMode(ctx: ExtensionContext) {
+	return (ctx as ExtensionContext & { mode?: string }).mode;
 }
 
 function formatElapsed(ms: number) {
